@@ -1,19 +1,18 @@
 FROM python:3.10-slim
 
 WORKDIR /opt/app
+
+# Copy dependencies first so Docker can cache their installation
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application files
 COPY . .
-RUN pip install --no-cache-dir -r /opt/app/requirements.txt
 
-# Install packages that we need. vim is for helping with debugging
-# ENV DEBIAN_FRONTEND noninteractive
-# RUN apt-get update && \
-#     apt-get upgrade -yq ca-certificates && \
-#     apt-get install -yq --no-install-recommends \
-#     prometheus-node-exporter
-
+# Gradio runs on port 7860
 EXPOSE 7860
-# EXPOSE 8000
-# EXPOSE 9100
-ENV GRADIO_SERVER_NAME="0.0.0.0"
 
-CMD ["python", "/opt/app/app.py"]
+# Start the recipe chatbot
+CMD ["python", "app.py"]
