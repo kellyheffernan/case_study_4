@@ -1,3 +1,5 @@
 /venv
 monitor.env
 ngrok
+__pycache__/
+.env

@@ -1,28 +1,28 @@
 import gradio as gr
 from huggingface_hub import HfApi, InferenceClient #following github cs2 sample code for token validation
-from transformers import pipeline
-import time
-from prometheus_client import start_http_server, Counter, Summary
+# from transformers import pipeline
+#import time
+#from prometheus_client import start_http_server, Counter, Summary
 
 # Prometheus metrics, inspired by Professor's cs3 code on github, but distinguishes between models for grafana comparison
-REQUEST_COUNTER = Counter("request_count", "Total number of requests", ["model"])
-SUCCESSFUL_REQUESTS = Counter("successful_request_count", "Total number of successful requests", ["model"])
-FAILED_REQUESTS = Counter("failed_request_count", "Total number of failed requests", ["model"])
-REQUEST_DURATION = Summary("request_duration_seconds", "Time spent processing request", ["model"])
+#REQUEST_COUNTER = Counter("request_count", "Total number of requests", ["model"])
+#SUCCESSFUL_REQUESTS = Counter("successful_request_count", "Total number of successful requests", ["model"])
+#FAILED_REQUESTS = Counter("failed_request_count", "Total number of failed requests", ["model"])
+#REQUEST_DURATION = Summary("request_duration_seconds", "Time spent processing request", ["model"])
 
-LOCAL_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+# LOCAL_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 REMOTE_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
 max_tokens = 900
 temperature = 0.7
 top_p = 0.95
 
-pipe = pipeline(
-    "text-generation",
-    model=LOCAL_MODEL,
-    dtype="auto",
-    device="cpu", #changed to cpu since we won't be using GPU anymore from Huggingface 
-)
+# pipe = pipeline(
+#     "text-generation",
+#     model=LOCAL_MODEL,
+#     dtype="auto",
+#     device="cpu", #changed to cpu since we won't be using GPU anymore from Huggingface 
+# )
 
 fancy_css = """
 .gradio-container {
@@ -51,21 +51,21 @@ fancy_css = """
 
 
 # @spaces.GPU needed to comment this out because we won't be able to use ZeroGPU anymore
-def local_generate(
-    messages,
-    max_tokens,
-    temperature,
-    top_p,
-):
-    outputs = pipe(
-        messages,
-        max_new_tokens=max_tokens,
-        do_sample=True,
-        temperature=temperature,
-        top_p=top_p,
-    )
+# def local_generate(
+#     messages,
+#     max_tokens,
+#     temperature,
+#     top_p,
+# ):
+#     outputs = pipe(
+#         messages,
+#         max_new_tokens=max_tokens,
+#         do_sample=True,
+#         temperature=temperature,
+#         top_p=top_p,
+#     )
 
-    return outputs[0]["generated_text"][-1]["content"]
+#     return outputs[0]["generated_text"][-1]["content"]
 
 # had to add this to fix a bug if you test remote model, then local, the input to local is no longer acceptable to internal qwen logic
 def normalize_history(history):
@@ -94,12 +94,12 @@ def respond(
     system_message,
     time_required,
     pantry_staples,
-    use_local_model,
+    #use_local_model,
     hf_token, #this is going to be provided by the user 
  ):
-    model = "local" if use_local_model else "remote"
-    REQUEST_COUNTER.labels(model=model).inc()  # Increment the request count metric
-    start_t = time.perf_counter()
+    #model = "remote"
+    #REQUEST_COUNTER.labels(model=model).inc()  # Increment the request count metric
+    #start_t = time.perf_counter()
     try:
         messages = [{"role": "system", "content": system_message}]
         messages.extend(normalize_history(history))
@@ -115,25 +115,25 @@ def respond(
         }
     )
 
-        if use_local_model:
-            print("[MODE] local")
+        # if use_local_model:
+        #     print("[MODE] local")
 
-            response = local_generate(
-                messages,
-                max_tokens,
-                temperature,
-                top_p,
-            )
+        #     response = local_generate(
+        #         messages,
+        #         max_tokens,
+        #         temperature,
+        #         top_p,
+        #     )
 
-            SUCCESSFUL_REQUESTS.labels(model=model).inc()
-            yield response
-            return
+        #     SUCCESSFUL_REQUESTS.labels(model=model).inc()
+        #     yield response
+        #     return
 
         print("[MODE] api")
 
     #user needs to provide their Hugging Face token now to use the API model instead of how we did it for cs1
         if not hf_token or not hf_token.strip():
-            FAILED_REQUESTS.labels(model=model).inc()
+            #FAILED_REQUESTS.labels(model=model).inc()
             yield "⚠️ Please enter your Hugging Face token first."
             return
 
@@ -160,12 +160,12 @@ def respond(
             response += token
             yield response
 
-        SUCCESSFUL_REQUESTS.labels(model=model).inc()
+        #SUCCESSFUL_REQUESTS.labels(model=model).inc()
     except Exception as e:
-        FAILED_REQUESTS.labels(model=model).inc()
+        #FAILED_REQUESTS.labels(model=model).inc()
         yield f"Error: {e}"
-    finally:
-        REQUEST_DURATION.labels(model=model).observe(time.perf_counter() - start_t)
+    #finally:
+        #REQUEST_DURATION.labels(model=model).observe(time.perf_counter() - start_t)
         
     #need to validate user's token now
 def validate_hf_token(hf_token):
@@ -244,11 +244,11 @@ with gr.Blocks() as demo:
         label="System message",
         render=False,
     )
-    use_local_model = gr.Checkbox(
-        label="Use Local Model",
-        value=False,
-        render=False,
-    )
+    # use_local_model = gr.Checkbox(
+    #     label="Use Local Model",
+    #     value=False,
+    #     render=False,
+    # )
 
     with gr.Column(elem_id="chat-container"):
         chatbot = gr.ChatInterface(
@@ -257,15 +257,15 @@ with gr.Blocks() as demo:
                 system_message,
                 time_required,
                 pantry_staples,
-                use_local_model,
+                #use_local_model,
                 hf_token
             ],
         )
 
-        gr.Markdown(
-            "**Use Additional inputs to switch between the API model and the locally executed model.**",
-            elem_id="model-note",
-        )
+        # gr.Markdown(
+        #     "**Use Additional inputs to switch between the API model and the locally executed model.**",
+        #     elem_id="model-note",
+        # )
 
         #adding in validation button based on if user provided token or not for api
         validate_button.click(
@@ -277,7 +277,7 @@ with gr.Blocks() as demo:
 
 
 if __name__ == "__main__":
-    start_http_server(8000)  #start prometheus metrics on port 8000
+    #start_http_server(8000)  #start prometheus metrics on port 8000
     demo.launch(
         theme=gr.themes.Soft(),
         css=fancy_css,
