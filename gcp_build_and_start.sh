@@ -9,7 +9,7 @@ MEMORY="4Gi"
 CPU="1"
 
 # Build a Linux AMD64 image for Cloud Run.
-docker build --platform linux/amd64 --provenance=false -t "$IMAGE" .
+docker build --platform linux/amd64 -t "$IMAGE" .
 
 # Push the container to Docker Hub.
 docker push "$IMAGE"
