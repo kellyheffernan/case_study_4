@@ -1,17 +1,11 @@
-# Case Study 3 for DS553 - Group 16 - Documentation
+# Case Study 4 for DS553 - Group 16 - Documentation
 
-## Overview: Container Names & Ports
-### Container Domain Names: all on Docker network 'monitoring'
-Product Container Domain Name: `group16-recipebot`  
-Prometheus Container Domain Name: `group16-prometheus`  
-Grafana Container Domain Name: `group16-grafana`  
-### External Ports
-`7000`: Chatbot (Internal: `7860`)  
-`7001`: Prometheus metrics (Internal: `8000`)  
-`7002`: Node Exporter metrics (Internal: `9100`)  
-`7003`: Grafana   
-
-## Part 1 - Deployment of Products on Docker Containers on the Shared VM - `app.py`, Dockerfile
+## GCP Deployment
+1. Open Dockerhub on laptop.
+2. Open WSL -> change directory to where my gcp_start_and_build.sh file lives.
+3. Run this command: bash gcp_build_and_start.sh
+4. Should output a full container build & GCP deployment, will give a public URL at the end.
+   
 ### Local & API Based Product
 #### Modifications made to `app.py`:
 1. We added Prometheus metrics. These were similar to what was implemented in the Professor's example case study 3. However, we made changes so that we can later seperate out the metrics by our local model vs our API based model on Grafana. We will also still be able to sum these across both for overall metrics of the entire app, regardless of model the user selected. These metrics were implemented in code at the top of the `app.py` file as well as counters added in their respective sections that made sense for the specific metric.
