@@ -31,6 +31,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          provenance: false
           tags: docker.io/kellywpi/case-study-4:${{ github.sha }}
 
       - name: Authenticate to Google Cloud
