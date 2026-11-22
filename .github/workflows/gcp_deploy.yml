@@ -53,6 +53,7 @@ jobs:
             --region="${{ vars.GCP_REGION }}" \
             --platform=managed \
             --image="us-central1-docker.pkg.dev/case-study-4-515318/case-study-4/recipe-chatbot:${{ github.sha }}" \
+            --allow-unauthenticated \
             --port=7860 \
             --cpu=1 \
             --memory=4Gi \
