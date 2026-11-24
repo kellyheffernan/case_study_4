@@ -1,28 +1,15 @@
+import os
+
 import gradio as gr
-from huggingface_hub import HfApi, InferenceClient #following github cs2 sample code for token validation
-# from transformers import pipeline
-#import time
-#from prometheus_client import start_http_server, Counter, Summary
+from google import genai
+from google.genai import types
 
-# Prometheus metrics, inspired by Professor's cs3 code on github, but distinguishes between models for grafana comparison
-#REQUEST_COUNTER = Counter("request_count", "Total number of requests", ["model"])
-#SUCCESSFUL_REQUESTS = Counter("successful_request_count", "Total number of successful requests", ["model"])
-#FAILED_REQUESTS = Counter("failed_request_count", "Total number of failed requests", ["model"])
-#REQUEST_DURATION = Summary("request_duration_seconds", "Time spent processing request", ["model"])
 
-# LOCAL_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
-REMOTE_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+REMOTE_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
 
-max_tokens = 900
-temperature = 0.7
-top_p = 0.95
-
-# pipe = pipeline(
-#     "text-generation",
-#     model=LOCAL_MODEL,
-#     dtype="auto",
-#     device="cpu", #changed to cpu since we won't be using GPU anymore from Huggingface 
-# )
+MAX_OUTPUT_TOKENS = 900
 
 fancy_css = """
 .gradio-container {
@@ -50,24 +37,6 @@ fancy_css = """
 """
 
 
-# @spaces.GPU needed to comment this out because we won't be able to use ZeroGPU anymore
-# def local_generate(
-#     messages,
-#     max_tokens,
-#     temperature,
-#     top_p,
-# ):
-#     outputs = pipe(
-#         messages,
-#         max_new_tokens=max_tokens,
-#         do_sample=True,
-#         temperature=temperature,
-#         top_p=top_p,
-#     )
-
-#     return outputs[0]["generated_text"][-1]["content"]
-
-# had to add this to fix a bug if you test remote model, then local, the input to local is no longer acceptable to internal qwen logic
 def normalize_history(history):
     normalized = []
 
@@ -81,12 +50,52 @@ def normalize_history(history):
                 if isinstance(part, dict) and part.get("type") == "text"
             )
 
-        normalized.append({
-            "role": item["role"],
-            "content": content,
-        })
+        normalized.append({"role": item["role"], "content": content})
 
     return normalized
+
+
+def create_vertex_client():
+    if not GOOGLE_CLOUD_PROJECT:
+        raise RuntimeError(
+            "GOOGLE_CLOUD_PROJECT must be configured for Vertex AI."
+        )
+
+    return genai.Client(
+        enterprise=True,
+        project=GOOGLE_CLOUD_PROJECT,
+        location=GOOGLE_CLOUD_LOCATION,
+        http_options=types.HttpOptions(api_version="v1"),
+    )
+
+
+def to_vertex_contents(history, message, time_required, pantry_staples):
+    contents = []
+
+    for item in normalize_history(history):
+        role = "model" if item["role"] == "assistant" else "user"
+        contents.append(
+            types.Content(
+                role=role,
+                parts=[types.Part.from_text(text=item["content"])],
+            )
+        )
+
+    pantry_text = ", ".join(pantry_staples) if pantry_staples else "None selected"
+    user_prompt = (
+        f"{message}\n\n"
+        f"Time Required: {time_required or 'Not specified'}\n"
+        f"Pantry Staples Available: {pantry_text}"
+    )
+    contents.append(
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=user_prompt)],
+        )
+    )
+
+    return contents
+
 
 def respond(
     message,
@@ -94,120 +103,42 @@ def respond(
     system_message,
     time_required,
     pantry_staples,
-    #use_local_model,
-    hf_token, #this is going to be provided by the user 
- ):
-    #model = "remote"
-    #REQUEST_COUNTER.labels(model=model).inc()  # Increment the request count metric
-    #start_t = time.perf_counter()
+):
     try:
-        messages = [{"role": "system", "content": system_message}]
-        messages.extend(normalize_history(history))
-        pantry_text = ", ".join(pantry_staples) if pantry_staples else "None selected"
-        messages.append(
-        {
-            "role": "user",
-            "content": (
-                f"{message}\n\n"
-                f"Time Required: {time_required}\n"
-                f"Pantry Staples Available: {pantry_text}"
-            ),
-        }
-    )
-
-        # if use_local_model:
-        #     print("[MODE] local")
-
-        #     response = local_generate(
-        #         messages,
-        #         max_tokens,
-        #         temperature,
-        #         top_p,
-        #     )
-
-        #     SUCCESSFUL_REQUESTS.labels(model=model).inc()
-        #     yield response
-        #     return
-
-        print("[MODE] api")
-
-    #user needs to provide their Hugging Face token now to use the API model instead of how we did it for cs1
-        if not hf_token or not hf_token.strip():
-            #FAILED_REQUESTS.labels(model=model).inc()
-            yield "⚠️ Please enter your Hugging Face token first."
-            return
-
-        client = InferenceClient(
-            token=hf_token, #user is providing this now
-            model=REMOTE_MODEL,
+        client = create_vertex_client()
+        contents = to_vertex_contents(
+            history,
+            message,
+            time_required,
+            pantry_staples,
         )
-
         response = ""
 
-        for chunk in client.chat_completion(
-            messages,
-            max_tokens=max_tokens,
-            stream=True,
-            temperature=temperature,
-            top_p=top_p,
+        for chunk in client.models.generate_content_stream(
+            model=REMOTE_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_message,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+            ),
         ):
-            choices = chunk.choices
-            token = ""
-
-            if len(choices) and choices[0].delta.content:
-                token = choices[0].delta.content
-
-            response += token
+            response += chunk.text or ""
             yield response
+    except Exception as error:
+        yield f"Error: {error}"
 
-        #SUCCESSFUL_REQUESTS.labels(model=model).inc()
-    except Exception as e:
-        #FAILED_REQUESTS.labels(model=model).inc()
-        yield f"Error: {e}"
-    #finally:
-        #REQUEST_DURATION.labels(model=model).observe(time.perf_counter() - start_t)
-        
-    #need to validate user's token now
-def validate_hf_token(hf_token):
-    if not hf_token or not hf_token.strip():
-        return "⚠️ Enter a Hugging Face token."
 
-    try:
-        account = HfApi(token=hf_token.strip()).whoami()
-        username = account.get("name", "unknown user")
-        return f"Valid Hugging Face token for **{username}**."
-    except Exception:
-        return (
-            "The token could not be validated. "
-        )
-    
 with gr.Blocks() as demo:
-
     gr.Markdown(
         "# 🍽️ What's For Dinner?",
         elem_id="app-title",
     )
 
     gr.Markdown(
-        "**Don't know what to make for dinner?  Plan your meals with our chatbot. Select the time you have and input your ingredients or special requests.**",
+        "**Don't know what to make for dinner? Plan your meals with our chatbot. "
+        "Select the time you have and input your ingredients or special requests.**",
         elem_id="app-subtitle",
     )
-
-    # Token entry immediately below the header
-    with gr.Row():
-        hf_token = gr.Textbox(
-            label="Hugging Face Token",
-            placeholder="hf_...",
-            type="password",
-            scale=4,
-        )
-
-        validate_button = gr.Button(
-            "Validate Token",
-            scale=1,
-        )
-
-    token_status = gr.Markdown()
 
     time_required = gr.Dropdown(
         choices=["20 minutes", "30 minutes", "1 hour", "2 hours"],
@@ -217,71 +148,56 @@ with gr.Blocks() as demo:
     )
 
     pantry_staples = gr.CheckboxGroup(
-    choices=[
-        "Salt",
-        "Pepper",
-        "Olive Oil",
-        "Butter",
-        "Garlic",
-        "Onions",
-        "Peppers",
-        "Rice",
-        "Pasta",
-        "Eggs",
-        "Flour",
-        "Sugar",
-        "Milk",
-        "Cheese",
-        "Tomatoes",
-        "Bread",
-        "Vinegar"
-    ],
-    label="Which Pantry Staples Do You Have?",
-    elem_id="pantry-staples",
-)
+        choices=[
+            "Salt",
+            "Pepper",
+            "Olive Oil",
+            "Butter",
+            "Garlic",
+            "Onions",
+            "Peppers",
+            "Rice",
+            "Pasta",
+            "Eggs",
+            "Flour",
+            "Sugar",
+            "Milk",
+            "Cheese",
+            "Tomatoes",
+            "Bread",
+            "Vinegar",
+        ],
+        label="Which Pantry Staples Do You Have?",
+        elem_id="pantry-staples",
+    )
+
     system_message = gr.Textbox(
-        value="You are a recipe assistant Chatbot. Use the user's input ingredients, checked pantry staples, and cooking time to suggest 1 recipe that can be made within the amount of time specified. If you suggest ingredients that the user does not explictly have, list these as optional.",
+        value=(
+            "You are a recipe assistant chatbot. Use the user's input ingredients, "
+            "checked pantry staples, and cooking time to suggest 1 recipe that can be "
+            "made within the amount of time specified. If you suggest ingredients that "
+            "the user does not explicitly have, list these as optional."
+        ),
         label="System message",
         render=False,
     )
-    # use_local_model = gr.Checkbox(
-    #     label="Use Local Model",
-    #     value=False,
-    #     render=False,
-    # )
 
     with gr.Column(elem_id="chat-container"):
-        chatbot = gr.ChatInterface(
+        gr.ChatInterface(
             fn=respond,
             additional_inputs=[
                 system_message,
                 time_required,
                 pantry_staples,
-                #use_local_model,
-                hf_token
             ],
         )
 
-        # gr.Markdown(
-        #     "**Use Additional inputs to switch between the API model and the locally executed model.**",
-        #     elem_id="model-note",
-        # )
-
-        #adding in validation button based on if user provided token or not for api
-        validate_button.click(
-            fn=validate_hf_token,
-            inputs=hf_token,
-            outputs=token_status,
-            api_visibility="private",
-    )
-
 
 if __name__ == "__main__":
-    #start_http_server(8000)  #start prometheus metrics on port 8000
     demo.launch(
         theme=gr.themes.Soft(),
         css=fancy_css,
         allowed_paths=["cute_kitchen_background.png"],
-        server_name = '0.0.0.0', #from Simeon's code, make accessible on local network
-        server_port = 7860 #server port for the VM
+        server_name="0.0.0.0",
+        server_port=7860,
     )
