@@ -57,6 +57,10 @@ jobs:
             --port=7860 \
             --cpu=1 \
             --memory=4Gi \
+            --service-account="cs4-vertex-inference@case-study-4-515318.iam.gserviceaccount.com" \
+            --set-env-vars="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=global,GEMINI_MODEL=gemini-3.5-flash-lite" \
+            --min-instances=0 \
+            --max-instances=1 \
             --quiet
 
       - name: Display deployed URL
