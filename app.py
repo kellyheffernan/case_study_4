@@ -1,8 +1,11 @@
+import json
 import os
 
 import gradio as gr
 from google import genai
+from google.auth import exceptions as google_auth_exceptions
 from google.genai import types
+from google.oauth2 import service_account
 
 
 REMOTE_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
@@ -61,10 +64,32 @@ def create_vertex_client():
             "GOOGLE_CLOUD_PROJECT must be configured for Vertex AI."
         )
 
+    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    credentials = None
+
+    if service_account_json:
+        try:
+            service_account_info = json.loads(service_account_json)
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+        except (
+            json.JSONDecodeError,
+            google_auth_exceptions.GoogleAuthError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ):
+            raise RuntimeError(
+                "GOOGLE_SERVICE_ACCOUNT_JSON contains invalid service account credentials."
+            ) from None
+
     return genai.Client(
         enterprise=True,
         project=GOOGLE_CLOUD_PROJECT,
         location=GOOGLE_CLOUD_LOCATION,
+        credentials=credentials,
         http_options=types.HttpOptions(api_version="v1"),
     )
 
@@ -124,6 +149,8 @@ def respond(
         ):
             response += chunk.text or ""
             yield response
+    except google_auth_exceptions.GoogleAuthError:
+        yield "Error: Unable to authenticate with Vertex AI."
     except Exception as error:
         yield f"Error: {error}"
 
